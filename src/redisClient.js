@@ -5,9 +5,13 @@ const redisURL = process.env.REDIS_URL || "redis://localhost:6379";
 let client;
 
 export const connectRedis = async () => {
+
+  console.log("🔌 Connecting to Redis at", redisURL);
+  
+
   client = createClient({ url: redisURL });
 
-  client.on("error", (err) => console.error("❌ Redis error:", err.message));
+  client.on("error", (err) => console.error("❌ Redis error:", err));
   client.on("reconnecting", () => console.warn("🔄 Reconnecting to Redis..."));
   client.on("connect", () => console.log("✅ Connected to Redis!"));
   client.on("ready", () =>
