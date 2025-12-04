@@ -609,6 +609,8 @@ function drawObservaciones(doc, y, texto = "") {
   const textX = MARGIN + 90;
   const maxW = MARGIN + INNER_W - 6 - textX;
 
+  const obs = String(texto ?? "").trim();
+
   // Etiqueta
   doc
     .font("Helvetica")
@@ -616,27 +618,26 @@ function drawObservaciones(doc, y, texto = "") {
     .fillColor(C.text)
     .text("Observaciones:", labelX, y);
 
-  // Línea guía
-  const lineY = y + 10;
-  line(doc, textX, lineY, MARGIN + INNER_W - 6, lineY);
-
-  // Contenido (si hay)
-  let yNext = y + 26;
-  const obs = String(texto ?? "").trim();
   if (obs) {
+    // 👉 Con texto: NO dibujamos línea; mostramos el contenido a la derecha de la etiqueta
     doc
       .font("Helvetica")
       .fontSize(F.small)
       .fillColor(C.text)
-      .text(obs, textX, y + 12, {
+      .text(obs, textX, y, {
         width: maxW,
         align: "left",
       });
-    // calcular altura usada
+
+    // Altura usada por el párrafo + margen inferior
     const usedH = doc.heightOfString(obs, { width: maxW, align: "left" });
-    yNext = y + 12 + usedH + 14;
+    return y + usedH + 12;
+  } else {
+    // 👉 Sin texto: dibujamos la línea guía
+    const lineY = y + 10;
+    line(doc, textX, lineY, MARGIN + INNER_W - 6, lineY);
+    return y + 26;
   }
-  return yNext;
 }
 
 function drawFooter(doc, info = {}) {
