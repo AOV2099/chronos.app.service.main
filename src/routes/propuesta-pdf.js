@@ -619,7 +619,7 @@ function drawObservaciones(doc, y, texto = "") {
     .text("Observaciones:", labelX, y);
 
   // Línea guía siempre
-  const lineY = y + 14; // un poco más abajo de la etiqueta
+  const lineY = y + 6; // un poco más abajo de la etiqueta
   line(doc, textX, lineY, MARGIN + INNER_W - 6, lineY);
 
   if (obs) {
