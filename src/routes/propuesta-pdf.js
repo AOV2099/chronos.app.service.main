@@ -618,25 +618,34 @@ function drawObservaciones(doc, y, texto = "") {
     .fillColor(C.text)
     .text("Observaciones:", labelX, y);
 
+  // Línea guía siempre
+  const lineY = y + 14; // un poco más abajo de la etiqueta
+  line(doc, textX, lineY, MARGIN + INNER_W - 6, lineY);
+
   if (obs) {
-    // 👉 Con texto: NO dibujamos línea; mostramos el contenido a la derecha de la etiqueta
+    // Texto "sobre" la línea: lo colocamos ligeramente por encima de lineY
+    // para que visualmente quede subrayado.
+    const fontSize = F.small;
+    const textTop = lineY - fontSize - 1; // -1 da efecto subrayado limpio
+
     doc
       .font("Helvetica")
-      .fontSize(F.small)
+      .fontSize(fontSize)
       .fillColor(C.text)
-      .text(obs, textX, y, {
+      .text(obs, textX, textTop, {
         width: maxW,
         align: "left",
       });
 
-    // Altura usada por el párrafo + margen inferior
+    // Altura real usada por el párrafo (por si hay salto de línea)
     const usedH = doc.heightOfString(obs, { width: maxW, align: "left" });
-    return y + usedH + 12;
+
+    // El bloque final llega hasta el mayor entre la línea y el texto
+    const bottomY = Math.max(lineY + 8, textTop + usedH);
+    return bottomY + 8; // margen inferior
   } else {
-    // 👉 Sin texto: dibujamos la línea guía
-    const lineY = y + 10;
-    line(doc, textX, lineY, MARGIN + INNER_W - 6, lineY);
-    return y + 26;
+    // Sin texto: sólo la línea
+    return lineY + 16;
   }
 }
 
