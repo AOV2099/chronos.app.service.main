@@ -46,8 +46,8 @@ const tryParse = (s) => {
 
 function multiLineCell(doc, txt, x, y, w, h, opts = {}) {
   const {
-    maxFont = 8,   // tamaño normal
-    minFont = 6,   // tamaño mínimo
+    maxFont = 8, // tamaño normal
+    minFont = 6, // tamaño mínimo
     font = "Helvetica",
     color = C.text,
     align = "center",
@@ -92,9 +92,6 @@ function multiLineCell(doc, txt, x, y, w, h, opts = {}) {
     });
 }
 
-
-
-
 // Sencillo util para trocear en páginas
 function chunkArray(arr, size) {
   const out = [];
@@ -125,7 +122,6 @@ function drawProposalPaged(doc, meta, rows, maxRows = MAX_ROWS_PER_PAGE) {
     });
   });
 }
-
 
 // 🔹 nueva: normaliza la clave a 4 dígitos con ceros a la izquierda
 function normalizeCve(value) {
@@ -401,6 +397,13 @@ function drawInfoBar(
   return y + h + 18;
 }
 
+const isBajaMov = (mov) => {
+  const m = String(mov ?? "")
+    .trim()
+    .toLowerCase();
+  return m === "baja" || m === "b";
+};
+
 function drawTable(doc, y, rows) {
   const boxX = MARGIN;
   const boxW = INNER_W;
@@ -567,15 +570,19 @@ function drawTable(doc, y, rows) {
     yData += hRow;
   });
 
+  // Totales (excluyendo bajas)
   const t = rows.reduce(
     (acc, r) => {
-      acc.teo += +r.teo || 0;
-      acc.pra += +r.pra || 0;
-      acc.tot += +r.tot || 0;
+      if (!isBajaMov(r.mov)) {
+        acc.teo += +r.teo || 0;
+        acc.pra += +r.pra || 0;
+        acc.tot += +r.tot || 0;
+      }
       return acc;
     },
     { teo: 0, pra: 0, tot: 0 }
   );
+
   doc.save().rect(boxX, yData, boxW, hRow).fill(C.gray).restore();
   const idxGrupo = baseCols.findIndex((c) => c.key === "grupo");
   const labelSpan = baseCols.slice(0, idxGrupo).reduce((a, c) => a + c.w, 0);
@@ -598,19 +605,41 @@ function drawTable(doc, y, rows) {
 }
 
 function drawObservaciones(doc, y, texto = "") {
+  const labelX = MARGIN + 6;
+  const textX = MARGIN + 90;
+  const maxW = MARGIN + INNER_W - 6 - textX;
+
+  // Etiqueta
   doc
     .font("Helvetica")
     .fontSize(F.small)
     .fillColor(C.text)
-    .text("Observaciones:", MARGIN + 6, y);
+    .text("Observaciones:", labelX, y);
+
+  // Línea guía
   const lineY = y + 10;
-  line(doc, MARGIN + 90, lineY, MARGIN + INNER_W - 6, lineY);
-  return y + 26;
+  line(doc, textX, lineY, MARGIN + INNER_W - 6, lineY);
+
+  // Contenido (si hay)
+  let yNext = y + 26;
+  const obs = String(texto ?? "").trim();
+  if (obs) {
+    doc
+      .font("Helvetica")
+      .fontSize(F.small)
+      .fillColor(C.text)
+      .text(obs, textX, y + 12, {
+        width: maxW,
+        align: "left",
+      });
+    // calcular altura usada
+    const usedH = doc.heightOfString(obs, { width: maxW, align: "left" });
+    yNext = y + 12 + usedH + 14;
+  }
+  return yNext;
 }
-function drawFooter(
-  doc,
-  info = {}
-) {
+
+function drawFooter(doc, info = {}) {
   const FOOTER = { base: 100, dateDy: -24, lemaDy: -11, signGap: 64 };
   const bottom = PAGE.h - MARGIN - FOOTER.base;
 
@@ -655,7 +684,6 @@ function drawFooter(
   mk(1, "JEFE DE CARRERA", jefe || "NO DEFINIDOXS");
   mk(2, "SELLO Y FIRMA DE RECIBIDO", "DEPTO. DE PERSONAL");
 }
-
 
 function drawOneProposalPage(
   doc,
@@ -786,7 +814,8 @@ function groupRowsByCarreraFromRedis({ profByWorker, horByWorker }) {
 // GET /api/propuesta?worker=809328 – genera UNA propuesta (PDF) para un numTrabajador
 router.get("/propuesta", async (req, res) => {
   const worker = req.query.worker || req.query.numTrabajador;
-  if (!worker) return res.status(400).json({ error: "Falta parámetro ?worker" });
+  if (!worker)
+    return res.status(400).json({ error: "Falta parámetro ?worker" });
 
   let client;
   try {
@@ -803,11 +832,17 @@ router.get("/propuesta", async (req, res) => {
     ]);
 
     const workerNum = toInt(worker);
-    const profByWorker = profesores.filter(p => toInt(p.numTrabajador) === workerNum);
-    const horByWorker  = horarios.filter(h => toInt(h.numTrabajador) === workerNum);
+    const profByWorker = profesores.filter(
+      (p) => toInt(p.numTrabajador) === workerNum
+    );
+    const horByWorker = horarios.filter(
+      (h) => toInt(h.numTrabajador) === workerNum
+    );
 
     if (!profByWorker.length && !horByWorker.length) {
-      return res.status(404).json({ error: `No hay datos para numTrabajador=${workerNum}` });
+      return res
+        .status(404)
+        .json({ error: `No hay datos para numTrabajador=${workerNum}` });
     }
 
     // Cargar logos una vez
@@ -820,17 +855,24 @@ router.get("/propuesta", async (req, res) => {
 
     // Stream de propuesta(s)
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `inline; filename="Propuesta-${workerNum}.pdf"`);
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="Propuesta-${workerNum}.pdf"`
+    );
 
-    const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: MARGIN });
+    const doc = new PDFDocument({
+      size: "A4",
+      layout: "landscape",
+      margin: MARGIN,
+    });
     doc.pipe(res);
 
     const pages = groupRowsByCarreraFromRedis({ profByWorker, horByWorker });
 
     const interesado =
       mostFrequentNonEmpty([
-        ...profByWorker.map(p => p.profesor),
-        ...horByWorker.map(h => h.profesor),
+        ...profByWorker.map((p) => p.profesor),
+        ...horByWorker.map((h) => h.profesor),
       ]) || `Trabajador ${workerNum}`;
 
     pages.forEach((pg, idx) => {
@@ -843,7 +885,7 @@ router.get("/propuesta", async (req, res) => {
           unidad: pg.unidad,
           interesado,
           jefe: pg.jefe,
-          fecha: pg.fecha,               // opcional; si no viene, el footer usa su default
+          fecha: pg.fecha, // opcional; si no viene, el footer usa su default
           observaciones: pg.observaciones,
         },
         pg.rows,
@@ -857,7 +899,6 @@ router.get("/propuesta", async (req, res) => {
     return res.status(500).json({ error: "Error procesando propuesta" });
   }
 });
-
 
 /* ================== /api/propuestas-all (TODOS en un solo PDF) ================== */
 // Dibuja 1+ páginas por profesor (una o varias por carrera, paginadas a 7 filas)
@@ -876,11 +917,13 @@ router.get("/propuestas-all", async (req, res) => {
     ]);
 
     const workerSet = new Set([
-      ...profesores.map(p => toInt(p.numTrabajador)).filter(Boolean),
-      ...horarios.map(h => toInt(h.numTrabajador)).filter(Boolean),
+      ...profesores.map((p) => toInt(p.numTrabajador)).filter(Boolean),
+      ...horarios.map((h) => toInt(h.numTrabajador)).filter(Boolean),
     ]);
     if (workerSet.size === 0) {
-      return res.status(404).json({ error: "No hay profesores/horarios para generar propuestas" });
+      return res
+        .status(404)
+        .json({ error: "No hay profesores/horarios para generar propuestas" });
     }
 
     // Cargar logos una vez
@@ -893,22 +936,33 @@ router.get("/propuestas-all", async (req, res) => {
 
     // Stream del PDF multi-página
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", 'inline; filename="Propuestas-todos.pdf"');
+    res.setHeader(
+      "Content-Disposition",
+      'inline; filename="Propuestas-todos.pdf"'
+    );
 
-    const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: MARGIN });
+    const doc = new PDFDocument({
+      size: "A4",
+      layout: "landscape",
+      margin: MARGIN,
+    });
     doc.pipe(res);
 
     const workers = Array.from(workerSet.values()).sort((a, b) => a - b);
 
     workers.forEach((workerNum, idx) => {
-      const profByWorker = profesores.filter(p => toInt(p.numTrabajador) === workerNum);
-      const horByWorker  = horarios.filter(h => toInt(h.numTrabajador) === workerNum);
+      const profByWorker = profesores.filter(
+        (p) => toInt(p.numTrabajador) === workerNum
+      );
+      const horByWorker = horarios.filter(
+        (h) => toInt(h.numTrabajador) === workerNum
+      );
 
       const pages = groupRowsByCarreraFromRedis({ profByWorker, horByWorker });
       const interesado =
         mostFrequentNonEmpty([
-          ...profByWorker.map(p => p.profesor),
-          ...horByWorker.map(h => h.profesor),
+          ...profByWorker.map((p) => p.profesor),
+          ...horByWorker.map((h) => h.profesor),
         ]) || `Trabajador ${workerNum}`;
 
       pages.forEach((pg, pgIdx) => {
@@ -921,7 +975,7 @@ router.get("/propuestas-all", async (req, res) => {
             unidad: pg.unidad,
             interesado,
             jefe: pg.jefe,
-            fecha: pg.fecha,             // opcional
+            fecha: pg.fecha, // opcional
             observaciones: pg.observaciones,
           },
           pg.rows,
@@ -936,7 +990,6 @@ router.get("/propuestas-all", async (req, res) => {
     return res.status(500).json({ error: "Error generando propuestas" });
   }
 });
-
 
 /* ================== /api/propuestas-from-csv (TODOS desde CSV en un solo PDF/ZIP) ================== */
 // Acepta:
@@ -1023,7 +1076,11 @@ function rowsFromCSV(csvText) {
       carrera: "carrera",
       unidad: "unidad",
       jefe: "jefe",
+
       observaciones: "observaciones",
+      obs: "observaciones",
+      observacion: "observaciones",
+
       periodo: "periodo",
 
       tipo: "tipo",
@@ -1122,15 +1179,14 @@ function rowsFromCSV(csvText) {
   return out;
 }
 
-function getDateString(){
-    //fecha en formato 23 de Noviembre del 2023
-    //numero de dia 2 digitos, mes en letras y anio 4 digitos
-    const fecha = new Date();
-    const dia = String(fecha.getDate()).padStart(2, '0');
-    const mes = fecha.toLocaleString('es-ES', { month: 'long' });
-    const anio = fecha.getFullYear();
-    return `${dia} de ${mes.charAt(0).toUpperCase() + mes.slice(1)} del ${anio}`;
-
+function getDateString() {
+  //fecha en formato 23 de Noviembre del 2023
+  //numero de dia 2 digitos, mes en letras y anio 4 digitos
+  const fecha = new Date();
+  const dia = String(fecha.getDate()).padStart(2, "0");
+  const mes = fecha.toLocaleString("es-ES", { month: "long" });
+  const anio = fecha.getFullYear();
+  return `${dia} de ${mes.charAt(0).toUpperCase() + mes.slice(1)} del ${anio}`;
 }
 
 // Devuelve la fila formateada para la tabla, tolerando columnas alias (CSV)
@@ -1244,33 +1300,53 @@ function buildPagesFromCsvRecords(recs, worker) {
   return { pages, interesado };
 }
 
-// Crea un PDF en memoria (Buffer) para UN trabajador (usado cuando isZip = true)
-function createPdfBufferForCsvWorker(worker, recs) {
+// Genera un PDF (Buffer) para un trabajador a partir de registros CSV
+// - Pagina a 7 filas por hoja usando drawProposalPaged
+// - Carga logos remotos si todavía no están en memoria
+async function createPdfBufferForCsvWorker(worker, recs) {
   const { pages, interesado } = buildPagesFromCsvRecords(recs, worker);
 
-  return new Promise((resolve, reject) => {
+  // Asegurar logos (solo si faltan)
+  try {
+    if (!LEFT_LOGO_BUF || !RIGHT_LOGO_BUF) {
+      [LEFT_LOGO_BUF, RIGHT_LOGO_BUF] = await Promise.all([
+        fetchAsBuffer(LOGO_LEFT_URL).catch(() => null),
+        fetchAsBuffer(LOGO_RIGHT_URL).catch(() => null),
+      ]);
+    }
+  } catch (e) {
+    console.warn("⚠️ No se pudieron cargar logos remotos:", e?.message);
+  }
+
+  return await new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: "A4",
       layout: "landscape",
       margin: MARGIN,
     });
-    const chunks = [];
 
+    const chunks = [];
     doc.on("data", (chunk) => chunks.push(chunk));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    pages.forEach((pg, pgIdx) => {
-      if (pgIdx > 0) doc.addPage();
-      let y = drawHeader(doc, { periodo: pg.periodo });
-      y = drawInfoBar(doc, y, { carrera: pg.carrera, unidad: pg.unidad });
-      y = drawTable(doc, y + 18, pg.rows);
-      y = drawObservaciones(doc, y, pg.observaciones);
-      drawFooter(doc, {
-        interesado,
-        jefe: pg.jefe,
-        // fecha: usamos la default del pie
-      });
+    // Por cada carrera del mismo maestro (puede crear más páginas internamente)
+    pages.forEach((pg, idx) => {
+      if (idx > 0) doc.addPage(); // nueva sección (otra carrera)
+      drawProposalPaged(
+        doc,
+        {
+          periodo: pg.periodo,
+          carrera: pg.carrera,
+          unidad: pg.unidad,
+          interesado,
+          jefe: pg.jefe,
+          fecha: pg.fecha, // opcional; si no viene, footer usa default
+          observaciones: pg.observaciones,
+        },
+        pg.rows,
+        MAX_ROWS_PER_PAGE // típicamente 7
+      );
     });
 
     doc.end();
@@ -1303,19 +1379,25 @@ router.post("/propuestas-from-csv", async (req, res) => {
     // 1) Obtener el texto CSV
     let csvText = "";
     if (typeof req.body === "string" && req.body.trim().includes(",")) {
-      csvText = req.body;                                   // text/csv
+      csvText = req.body; // text/csv
     } else if (req.body && typeof req.body.csv === "string") {
-      csvText = req.body.csv;                               // application/json { csv: "..." }
+      csvText = req.body.csv; // application/json { csv: "..." }
     } else if (req.query.csvUrl) {
-      const r = await fetch(String(req.query.csvUrl));      // ?csvUrl=https://...
-      if (!r.ok) return res.status(400).json({ error: `No se pudo descargar CSV (${r.status})` });
+      const r = await fetch(String(req.query.csvUrl)); // ?csvUrl=https://...
+      if (!r.ok)
+        return res
+          .status(400)
+          .json({ error: `No se pudo descargar CSV (${r.status})` });
       csvText = await r.text();
     } else {
-      return res.status(400).json({ error: 'Envía text/csv crudo, {"csv":"..."} o ?csvUrl=' });
+      return res
+        .status(400)
+        .json({ error: 'Envía text/csv crudo, {"csv":"..."} o ?csvUrl=' });
     }
 
     const csvRows = rowsFromCSV(csvText);
-    if (!csvRows.length) return res.status(400).json({ error: "CSV vacío o inválido" });
+    if (!csvRows.length)
+      return res.status(400).json({ error: "CSV vacío o inválido" });
 
     // 2) Agrupar por num_trabajador
     const byWorker = new Map();
@@ -1326,13 +1408,18 @@ router.post("/propuestas-from-csv", async (req, res) => {
       byWorker.get(worker).push(r);
     }
     if (byWorker.size === 0) {
-      return res.status(400).json({ error: "El CSV no contiene numTrabajador válidos" });
+      return res
+        .status(400)
+        .json({ error: "El CSV no contiene numTrabajador válidos" });
     }
 
     // 3) ¿ZIP o PDF único?
     const rawIsZip =
-      req.query.isZip ?? req.query.iszip ?? req.query.zip ??
-      (req.body && (req.body.isZip ?? req.body.zip)) ?? "false";
+      req.query.isZip ??
+      req.query.iszip ??
+      req.query.zip ??
+      (req.body && (req.body.isZip ?? req.body.zip)) ??
+      "false";
     const isZip =
       String(rawIsZip).toLowerCase() === "true" ||
       String(rawIsZip) === "1" ||
@@ -1350,12 +1437,17 @@ router.post("/propuestas-from-csv", async (req, res) => {
       console.warn("⚠️ No se pudieron cargar logos remotos:", e?.message);
     }
 
-    const workers = Array.from(byWorker.keys()).sort((a, b) => Number(a) - Number(b));
+    const workers = Array.from(byWorker.keys()).sort(
+      (a, b) => Number(a) - Number(b)
+    );
 
     /* ====== MODO ZIP: un PDF por profesor ====== */
     if (isZip) {
       res.setHeader("Content-Type", "application/zip");
-      res.setHeader("Content-Disposition", 'attachment; filename="Propuestas-desde-CSV.zip"');
+      res.setHeader(
+        "Content-Disposition",
+        'attachment; filename="Propuestas-desde-CSV.zip"'
+      );
 
       const archive = archiver("zip", { zlib: { level: 9 } });
       archive.on("error", (err) => {
@@ -1382,9 +1474,16 @@ router.post("/propuestas-from-csv", async (req, res) => {
 
     /* ====== MODO NORMAL: un solo PDF multi-página ====== */
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", 'inline; filename="Propuestas-desde-CSV.pdf"');
+    res.setHeader(
+      "Content-Disposition",
+      'inline; filename="Propuestas-desde-CSV.pdf"'
+    );
 
-    const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: MARGIN });
+    const doc = new PDFDocument({
+      size: "A4",
+      layout: "landscape",
+      margin: MARGIN,
+    });
     doc.pipe(res);
 
     workers.forEach((worker, idx) => {
@@ -1401,7 +1500,7 @@ router.post("/propuestas-from-csv", async (req, res) => {
             unidad: pg.unidad,
             interesado,
             jefe: pg.jefe,
-            fecha: pg.fecha,                 // opcional
+            fecha: pg.fecha, // opcional
             observaciones: pg.observaciones,
           },
           pg.rows,
@@ -1414,7 +1513,9 @@ router.post("/propuestas-from-csv", async (req, res) => {
   } catch (err) {
     console.error("❌ Error en /propuestas-from-csv:", err);
     if (!res.headersSent) {
-      return res.status(500).json({ error: "Error generando propuestas desde CSV" });
+      return res
+        .status(500)
+        .json({ error: "Error generando propuestas desde CSV" });
     }
     res.end();
   }
